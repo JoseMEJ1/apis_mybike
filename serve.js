@@ -9,6 +9,12 @@ const {
   rutas 
 } = require('./connection');
 app.use(express.json());
+const mongoose = require('mongoose');
+require('dotenv').config();
+
+mongoose.connect(process.env.MONGO_URL)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 app.get('/system-check', async (req, res) => {
   try {
     const checks = {
