@@ -1,11 +1,26 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { connectDB, usuarios, dispositivos, impactos, botonesPanico, rutas } = require('./connection');
 const app = express();
-
-// Conexión a la base de datos antes de iniciar el servidor
-connectDB().then(() => {
-  app.use(express.json());
+const { 
+  usuarios,
+  dispositivos, 
+  impactos, 
+  botonesPanico, 
+  rutas 
+} = require('./connection');
+app.use(express.json());
+app.get('/system-check', async (req, res) => {
+  try {
+    const checks = {
+      db: mongoose.connection.readyState === 1 ? 'OK' : 'OFFLINE',
+      usuarios: await usuarios.countDocuments(),
+      dispositivos: await dispositivos.countDocuments()
+    };
+    res.json(checks);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 // 1. APIs DE USUARIO
 
 // Ver todos los usuarios
@@ -581,11 +596,8 @@ app.get('/dispositivos/test', async (req, res) => {
     });
   }
 });
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
+// Iniciar servidor
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
     console.log(`Servidor corriendo en puerto ${PORT}`);
-  });
-}).catch(error => {
-  console.error('No se pudo iniciar la aplicación:', error);
-  process.exit(1);
 });

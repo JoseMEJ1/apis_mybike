@@ -1,43 +1,87 @@
 const mongoose = require("mongoose");
 require('dotenv').config();
 
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URL, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      ssl: true,
-      tls: true,
-      tlsAllowInvalidCertificates: false,
-      tlsAllowInvalidHostnames: false,
-      retryWrites: true,
-      w: 'majority'
-    });
-    console.log('Conexión a MongoDB establecida');
-  } catch (error) {
-    console.error('Error de conexión a MongoDB:', error);
-    process.exit(1); // Salir del proceso con error
-  }
-};
+const mongoUrl = process.env.MONGO_URL;
+mongoose.connect(mongoUrl);
 
 mongoose.connection.on('connected', () => {
-  console.log('Mongoose conectado a MongoDB');
+  console.log('Conexión a MongoDB establecida');
 });
 
 mongoose.connection.on('error', (err) => {
-  console.error('Error de conexión en Mongoose:', err);
+  console.error('Error de conexión a MongoDB:', err);
 });
+// Esquema para impactos (mediciones)
+const impactosSchema = new mongoose.Schema(
+    {
+        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' },
+        valor: Number,
+        fecha_de_impacto: Date
+    },
+    { versionKey: false }
+);
 
-mongoose.connection.on('disconnected', () => {
-  console.log('Mongoose desconectado de MongoDB');
-});
+// Esquema para dispositivos
+const dispositivosSchema = new mongoose.Schema(
+    {
+        gps: {
+            latitud: Number,
+            longitud: Number
+        },
+        fecha_de_actualizacion: Date,
+        hora_de_actualizacion: String,
+        estatus: { type: String, default: 'activo' }
+    },
+    { versionKey: false }
+);
 
-// Exportar la función de conexión y los modelos
+// Esquema para rutas
+const rutasSchema = new mongoose.Schema(
+    {
+        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' },
+        nombre_ruta: String,
+        ubicacion_de_inicio: {
+            latitud: Number,
+            longitud: Number
+        },
+        ubicacion_de_final: {
+            latitud: Number,
+            longitud: Number
+        },
+        fecha_de_inicio: Date,
+        fecha_de_final: Date
+    },
+    { versionKey: false }
+);
+
+// Esquema para usuarios
+const usuariosSchema = new mongoose.Schema(
+    {
+        nombre: String,
+        apellido: String,
+        correo: { type: String, unique: true },
+        contrasenia: String,
+        tipo: { type: String, enum: ['administrador', 'usuario'], default: 'usuario' },
+        fecha_registro: { type: Date, default: Date.now },
+        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' }
+    },
+    { versionKey: false }
+);
+
+// Esquema para botones de pánico
+const botonPanicoSchema = new mongoose.Schema(
+    {
+        id_usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'usuarios' },
+        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' },
+        estatus: { type: String, enum: ['activo', 'inactivo', 'emergencia'], default: 'activo' }
+    },
+    { versionKey: false }
+);
+
 module.exports = {
-  connectDB,
-  usuarios: mongoose.model("usuarios", require('./schemas/usuarioSchema')),
-  dispositivos: mongoose.model("dispositivos", require('./schemas/dispositivoSchema')),
-  impactos: mongoose.model("impactos", require('./schemas/impactoSchema')),
-  botonesPanico: mongoose.model("botones_panico", require('./schemas/botonPanicoSchema')),
-  rutas: mongoose.model("rutas", require('./schemas/rutaSchema'))
+    impactos: mongoose.model("impactos", impactosSchema),
+    dispositivos: mongoose.model("dispositivos", dispositivosSchema),
+    rutas: mongoose.model("rutas", rutasSchema),
+    usuarios: mongoose.model("usuarios", usuariosSchema),
+    botonesPanico: mongoose.model("botones_panico", botonPanicoSchema)
 };
