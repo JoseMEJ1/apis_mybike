@@ -48,12 +48,11 @@ const sensorSchema = new mongoose.Schema({
 
 const SensorData = mongoose.model('SensorData', sensorSchema);
 
-// 1. 📝 POST - Crear nuevo registro (Para ESP32)
+// 1. 📝 POST - Crear nuevo registro
 app.post('/api/sensor-data', async (req, res) => {
     try {
         const { temperatura, humedad, deviceId } = req.body;
         
-        // Validar datos requeridos
         if (temperatura === undefined || humedad === undefined) {
             return res.status(400).json({
                 success: false,
@@ -101,11 +100,19 @@ app.get('/api/sensor-data', async (req, res) => {
     }
 });
 
-// 3. ✏️ PUT - Actualizar registro
+// 3. ✏️ PUT - Actualizar registro (CORREGIDO)
 app.put('/api/sensor-data/:id', async (req, res) => {
     try {
         const { temperatura, humedad } = req.body;
         
+        // Validar que al menos un campo sea proporcionado
+        if (temperatura === undefined && humedad === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'Se requiere temperatura o humedad para actualizar'
+            });
+        }
+
         const updateData = {};
         if (temperatura !== undefined) updateData.temperatura = parseFloat(temperatura);
         if (humedad !== undefined) updateData.humedad = parseFloat(humedad);
@@ -113,7 +120,7 @@ app.put('/api/sensor-data/:id', async (req, res) => {
         const updatedData = await SensorData.findByIdAndUpdate(
             req.params.id,
             updateData,
-            { new: true }
+            { new: true, runValidators: true }
         );
 
         if (!updatedData) {
@@ -163,7 +170,7 @@ app.delete('/api/sensor-data/:id', async (req, res) => {
     }
 });
 
-// Ruta básica de información
+// Ruta de información
 app.get('/', (req, res) => {
     res.json({
         message: 'API para sensor DHT11 con MongoDB',
@@ -176,7 +183,16 @@ app.get('/', (req, res) => {
     });
 });
 
+// Manejo de errores 404
+app.use('*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        message: 'Endpoint no encontrado',
+        url: req.originalUrl
+    });
+});
+
 // Iniciar servidor
 app.listen(port, () => {
-    console.log(` Servidor corriendo en puerto ${port}`);
+    console.log(`Servidor corriendo en puerto ${port}`);
 });
