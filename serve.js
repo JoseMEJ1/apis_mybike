@@ -10,15 +10,33 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Conexión a MongoDB Atlas
+// Conexión a MongoDB Atlas - CONEXIÓN MEJORADA
 const dbURI = "mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/DHT11?retryWrites=true&w=majority&appName=Cluster0";
 
-mongoose.connect(dbURI, { 
-    useNewUrlParser: true, 
-    useUnifiedTopology: true 
-})
-.then(() => console.log('✅ Conectado a MongoDB Atlas'))
-.catch((err) => console.log('❌ Error de conexión:', err));
+// Configuración mejorada de Mongoose
+mongoose.set('strictQuery', false);
+
+const connectDB = async () => {
+    try {
+        const conn = await mongoose.connect(dbURI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            serverSelectionTimeoutMS: 5000, // Timeout de 5 segundos
+            socketTimeoutMS: 45000, // Timeout de socket de 45 segundos
+        });
+        
+        console.log(' Conectado a MongoDB Atlas');
+        console.log(`Base de datos: ${conn.connection.name}`);
+        console.log(`Colección: ${conn.connection.collections.length} colecciones`);
+        
+    } catch (error) {
+        console.log(' Error de conexión a MongoDB:', error.message);
+        process.exit(1); // Salir si no puede conectar
+    }
+};
+
+// Conectar a la base de datos
+connectDB();
 
 // Esquema de datos del sensor
 const sensorSchema = new mongoose.Schema({
@@ -48,8 +66,20 @@ const sensorSchema = new mongoose.Schema({
 
 const SensorData = mongoose.model('SensorData', sensorSchema);
 
+// Middleware para verificar conexión a BD
+const checkDBConnection = (req, res, next) => {
+    if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+            success: false,
+            message: 'Base de datos no conectada',
+            error: 'Intenta nuevamente en unos momentos'
+        });
+    }
+    next();
+};
+
 // 1. 📝 POST - Crear nuevo registro
-app.post('/api/sensor-data', async (req, res) => {
+app.post('/api/sensor-data', checkDBConnection, async (req, res) => {
     try {
         const { temperatura, humedad, deviceId } = req.body;
         
@@ -83,9 +113,9 @@ app.post('/api/sensor-data', async (req, res) => {
 });
 
 // 2. 📋 GET - Obtener todos los registros
-app.get('/api/sensor-data', async (req, res) => {
+app.get('/api/sensor-data', checkDBConnection, async (req, res) => {
     try {
-        const data = await SensorData.find().sort({ timestamp: -1 });
+        const data = await SensorData.find().sort({ timestamp: -1 }).maxTimeMS(10000);
         res.json({
             success: true,
             data: data,
@@ -100,12 +130,11 @@ app.get('/api/sensor-data', async (req, res) => {
     }
 });
 
-// 3. ✏️ PUT - Actualizar registro (CORREGIDO)
-app.put('/api/sensor-data/:id', async (req, res) => {
+// 3. ✏️ PUT - Actualizar registro
+app.put('/api/sensor-data/:id', checkDBConnection, async (req, res) => {
     try {
         const { temperatura, humedad } = req.body;
         
-        // Validar que al menos un campo sea proporcionado
         if (temperatura === undefined && humedad === undefined) {
             return res.status(400).json({
                 success: false,
@@ -145,7 +174,7 @@ app.put('/api/sensor-data/:id', async (req, res) => {
 });
 
 // 4. 🗑️ DELETE - Eliminar registro
-app.delete('/api/sensor-data/:id', async (req, res) => {
+app.delete('/api/sensor-data/:id', checkDBConnection, async (req, res) => {
     try {
         const deletedData = await SensorData.findByIdAndDelete(req.params.id);
         
@@ -170,6 +199,26 @@ app.delete('/api/sensor-data/:id', async (req, res) => {
     }
 });
 
+// Ruta de verificación de estado
+app.get('/api/health', (req, res) => {
+    const dbStatus = mongoose.connection.readyState;
+    const statusMessages = [
+        'desconectado',
+        'conectado',
+        'conectando',
+        'desconectando'
+    ];
+    
+    res.json({
+        success: dbStatus === 1,
+        message: `Estado de MongoDB: ${statusMessages[dbStatus]}`,
+        database: {
+            status: statusMessages[dbStatus],
+            readyState: dbStatus
+        }
+    });
+});
+
 // Ruta de información
 app.get('/', (req, res) => {
     res.json({
@@ -178,7 +227,8 @@ app.get('/', (req, res) => {
             'POST': '/api/sensor-data',
             'GET': '/api/sensor-data',
             'PUT': '/api/sensor-data/:id',
-            'DELETE': '/api/sensor-data/:id'
+            'DELETE': '/api/sensor-data/:id',
+            'HEALTH': '/api/health'
         }
     });
 });
@@ -194,5 +244,6 @@ app.use('*', (req, res) => {
 
 // Iniciar servidor
 app.listen(port, () => {
-    console.log(`Servidor corriendo en puerto ${port}`);
+    console.log(` Servidor corriendo en puerto ${port}`);
+    console.log(` Health check disponible en: http://localhost:${port}/api/health`);
 });
