@@ -11,7 +11,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Conexión a MongoDB Atlas
-const dbURI = "mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/DHT11?retryWrites=true&w=majority&appName=Cluster0";
+const dbURI = "mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
 // Configuración mejorada de Mongoose
 mongoose.set('strictQuery', false);
