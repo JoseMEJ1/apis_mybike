@@ -4,53 +4,37 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 
 const app = express();
-const port = process.env.PORT || 10000; // Render usa puerto 10000
+const port = process.env.PORT || 10000;
 
-// Middlewares
-app.use(cors());
+// Middlewares - IMPORTANTE: El orden sí importa
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(bodyParser.json());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Conexión a MongoDB Atlas - CONEXIÓN PARA RENDER
+// Manejar preflight requests
+app.options('*', cors());
+
+// Conexión a MongoDB Atlas
 const dbURI = "mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/DHT11?retryWrites=true&w=majority&appName=Cluster0";
 
-// Configuración mejorada para Render
-mongoose.set('strictQuery', false);
+mongoose.connect(dbURI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+})
+.then(() => console.log('Conectado a MongoDB Atlas'))
+.catch(err => console.log('Error de conexión:', err));
 
-const connectDB = async () => {
-    try {
-        console.log('🔄 Intentando conectar a MongoDB Atlas...');
-        
-        const conn = await mongoose.connect(dbURI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-            serverSelectionTimeoutMS: 10000, // 10 segundos timeout
-            socketTimeoutMS: 45000,
-        });
-        
-        console.log('✅ Conectado a MongoDB Atlas desde Render');
-        console.log(`📊 Base de datos: ${conn.connection.name}`);
-        
-    } catch (error) {
-        console.log('❌ Error de conexión a MongoDB:', error.message);
-        console.log('ℹ️ Verifica que:');
-        console.log('1. Las IPs de Render estén en la lista blanca de MongoDB Atlas');
-        console.log('2. El usuario "admin" con contraseña "123" exista');
-        console.log('3. La base de datos "DHT11" exista');
-        process.exit(1);
-    }
-};
-
-// Conectar a la base de datos
-connectDB();
-
-// Esquema de datos del sensor
+// Esquema y Modelo
 const sensorSchema = new mongoose.Schema({
     temperatura: Number,
     humedad: Number,
-    deviceId: {
-        type: String,
-        default: 'ESP32_DHT11'
-    },
+    deviceId: String,
     timestamp: {
         type: Date,
         default: Date.now
@@ -59,34 +43,61 @@ const sensorSchema = new mongoose.Schema({
 
 const SensorData = mongoose.model('SensorData', sensorSchema);
 
-// Routes simples para probar
+// 1. POST - Crear registro
 app.post('/api/sensor-data', async (req, res) => {
     try {
-        const { temperatura, humedad } = req.body;
+        const { temperatura, humedad, deviceId } = req.body;
         
-        const newData = new SensorData({ 
-            temperatura, 
-            humedad 
+        const newData = new SensorData({
+            temperatura,
+            humedad,
+            deviceId: deviceId || 'ESP32_DHT11'
         });
 
         const savedData = await newData.save();
         
         res.json({
             success: true,
-            message: 'Datos guardados',
+            message: 'Registro creado',
             data: savedData
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: 'Error al guardar datos'
+            message: 'Error al crear registro'
         });
     }
 });
 
+// 2. GET - Obtener todos los registros
 app.get('/api/sensor-data', async (req, res) => {
     try {
         const data = await SensorData.find().sort({ timestamp: -1 });
+        res.json({
+            success: true,
+            data: data,
+            total: data.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener registros'
+        });
+    }
+});
+
+// 3. GET - Obtener registro por ID
+app.get('/api/sensor-data/:id', async (req, res) => {
+    try {
+        const data = await SensorData.findById(req.params.id);
+        
+        if (!data) {
+            return res.status(404).json({
+                success: false,
+                message: 'Registro no encontrado'
+            });
+        }
+
         res.json({
             success: true,
             data: data
@@ -94,31 +105,108 @@ app.get('/api/sensor-data', async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: 'Error al obtener datos'
+            message: 'Error al obtener registro'
         });
     }
 });
 
-// Health check mejorado
-app.get('/api/health', async (req, res) => {
-    const dbStatus = mongoose.connection.readyState;
-    const statusMessages = ['disconnected', 'connected', 'connecting', 'disconnecting'];
-    
+// 4. PUT - Actualizar registro (CORREGIDO)
+app.put('/api/sensor-data/:id', async (req, res) => {
+    try {
+        const { temperatura, humedad } = req.body;
+        
+        const updateData = {};
+        if (temperatura !== undefined) updateData.temperatura = temperatura;
+        if (humedad !== undefined) updateData.humedad = humedad;
+
+        const updatedData = await SensorData.findByIdAndUpdate(
+            req.params.id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedData) {
+            return res.status(404).json({
+                success: false,
+                message: 'Registro no encontrado'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Registro actualizado',
+            data: updatedData
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error al actualizar registro: ' + error.message
+        });
+    }
+});
+
+// 5. DELETE - Eliminar registro (CORREGIDO)
+app.delete('/api/sensor-data/:id', async (req, res) => {
+    try {
+        const deletedData = await SensorData.findByIdAndDelete(req.params.id);
+        
+        if (!deletedData) {
+            return res.status(404).json({
+                success: false,
+                message: 'Registro no encontrado'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Registro eliminado',
+            data: deletedData
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error al eliminar registro: ' + error.message
+        });
+    }
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
     res.json({
-        success: dbStatus === 1,
-        status: statusMessages[dbStatus],
-        message: dbStatus === 1 ? '✅ MongoDB conectado' : '❌ MongoDB desconectado'
+        success: true,
+        message: 'API funcionando correctamente',
+        timestamp: new Date().toISOString()
     });
 });
 
-app.get('/', (req, res) => {
+// Ruta de prueba para verificar métodos
+app.get('/api/test-methods', (req, res) => {
     res.json({
-        message: 'API en Render - Sensor DHT11',
-        status: 'running'
+        success: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+        message: 'Todos los métodos están habilitados'
+    });
+});
+
+// Manejo de errores 404
+app.use('*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        message: 'Ruta no encontrada'
+    });
+});
+
+// Manejo de errores global
+app.use((err, req, res, next) => {
+    console.error('Error:', err);
+    res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
     });
 });
 
 app.listen(port, () => {
     console.log(`🚀 Servidor corriendo en puerto ${port}`);
-    console.log(`🌐 Health check: http://localhost:${port}/api/health`);
+    console.log(`📊 Health check: http://localhost:${port}/api/health`);
+    console.log(`🧪 Test methods: http://localhost:${port}/api/test-methods`);
 });
