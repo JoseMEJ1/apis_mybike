@@ -3,9 +3,8 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 
-// Crear una instancia de la aplicación Express
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Middlewares
 app.use(cors());
@@ -18,36 +17,41 @@ mongoose.connect(dbURI, {
     useNewUrlParser: true, 
     useUnifiedTopology: true 
 })
-.then(() => console.log('Conectado a MongoDB Atlas'))
-.catch((err) => console.log('Error de conexión:', err));
+.then(() => console.log('✅ Conectado a MongoDB Atlas'))
+.catch((err) => console.log('❌ Error de conexión:', err));
 
-// Definir el esquema de los datos del sensor
+// Esquema de datos del sensor
 const sensorSchema = new mongoose.Schema({
     temperatura: {
         type: Number,
-        required: true
+        required: true,
+        min: -50,
+        max: 100
     },
     humedad: {
         type: Number,
-        required: true
+        required: true,
+        min: 0,
+        max: 100
+    },
+    deviceId: {
+        type: String,
+        default: 'ESP32_DHT11'
     },
     timestamp: {
         type: Date,
         default: Date.now
     }
 }, {
-    collection: 'data' // Nombre de la colección en MongoDB
+    collection: 'data'
 });
 
-// Crear el modelo basado en el esquema
 const SensorData = mongoose.model('SensorData', sensorSchema);
 
-// ENDPOINTS DE LA API
-
-// POST - Crear nuevo registro
-app.post('/api/temperatura', async (req, res) => {
+// 1. 📝 POST - Crear nuevo registro (Para ESP32)
+app.post('/api/sensor-data', async (req, res) => {
     try {
-        const { temperatura, humedad } = req.body;
+        const { temperatura, humedad, deviceId } = req.body;
         
         // Validar datos requeridos
         if (temperatura === undefined || humedad === undefined) {
@@ -59,7 +63,8 @@ app.post('/api/temperatura', async (req, res) => {
 
         const newData = new SensorData({ 
             temperatura: parseFloat(temperatura), 
-            humedad: parseFloat(humedad) 
+            humedad: parseFloat(humedad),
+            deviceId: deviceId || 'ESP32_DHT11'
         });
 
         const savedData = await newData.save();
@@ -78,27 +83,14 @@ app.post('/api/temperatura', async (req, res) => {
     }
 });
 
-// GET - Obtener todos los registros
-app.get('/api/temperatura', async (req, res) => {
+// 2. 📋 GET - Obtener todos los registros
+app.get('/api/sensor-data', async (req, res) => {
     try {
-        const { limit = 100, page = 1 } = req.query;
-        
-        const data = await SensorData.find()
-            .sort({ timestamp: -1 })
-            .limit(parseInt(limit))
-            .skip((parseInt(page) - 1) * parseInt(limit));
-
-        const total = await SensorData.countDocuments();
-
+        const data = await SensorData.find().sort({ timestamp: -1 });
         res.json({
             success: true,
             data: data,
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total: total,
-                pages: Math.ceil(total / parseInt(limit))
-            }
+            total: data.length
         });
     } catch (error) {
         res.status(500).json({
@@ -109,33 +101,8 @@ app.get('/api/temperatura', async (req, res) => {
     }
 });
 
-// GET - Obtener un registro por ID
-app.get('/api/temperatura/:id', async (req, res) => {
-    try {
-        const data = await SensorData.findById(req.params.id);
-        
-        if (!data) {
-            return res.status(404).json({
-                success: false,
-                message: 'Registro no encontrado'
-            });
-        }
-
-        res.json({
-            success: true,
-            data: data
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al obtener el registro',
-            error: error.message
-        });
-    }
-});
-
-// PUT - Actualizar un registro existente
-app.put('/api/temperatura/:id', async (req, res) => {
+// 3. ✏️ PUT - Actualizar registro
+app.put('/api/sensor-data/:id', async (req, res) => {
     try {
         const { temperatura, humedad } = req.body;
         
@@ -146,7 +113,7 @@ app.put('/api/temperatura/:id', async (req, res) => {
         const updatedData = await SensorData.findByIdAndUpdate(
             req.params.id,
             updateData,
-            { new: true, runValidators: true }
+            { new: true }
         );
 
         if (!updatedData) {
@@ -170,8 +137,8 @@ app.put('/api/temperatura/:id', async (req, res) => {
     }
 });
 
-// DELETE - Eliminar un registro
-app.delete('/api/temperatura/:id', async (req, res) => {
+// 4. 🗑️ DELETE - Eliminar registro
+app.delete('/api/sensor-data/:id', async (req, res) => {
     try {
         const deletedData = await SensorData.findByIdAndDelete(req.params.id);
         
@@ -196,48 +163,20 @@ app.delete('/api/temperatura/:id', async (req, res) => {
     }
 });
 
-// GET - Último registro
-app.get('/api/temperatura/latest', async (req, res) => {
-    try {
-        const latestData = await SensorData.findOne()
-            .sort({ timestamp: -1 });
-
-        if (!latestData) {
-            return res.status(404).json({
-                success: false,
-                message: 'No se encontraron registros'
-            });
-        }
-
-        res.json({
-            success: true,
-            data: latestData
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al obtener el último registro',
-            error: error.message
-        });
-    }
-});
-
-// Ruta de información de la API
+// Ruta básica de información
 app.get('/', (req, res) => {
     res.json({
-        message: 'API para sensor DHT11 con MongoDB Atlas',
+        message: 'API para sensor DHT11 con MongoDB',
         endpoints: {
-            'POST - Crear registro': '/api/temperatura',
-            'GET - Todos los registros': '/api/temperatura',
-            'GET - Registro por ID': '/api/temperatura/:id',
-            'PUT - Actualizar registro': '/api/temperatura/:id',
-            'DELETE - Eliminar registro': '/api/temperatura/:id',
-            'GET - Último registro': '/api/temperatura/latest'
+            'POST': '/api/sensor-data',
+            'GET': '/api/sensor-data',
+            'PUT': '/api/sensor-data/:id',
+            'DELETE': '/api/sensor-data/:id'
         }
     });
 });
 
-// Iniciar el servidor
+// Iniciar servidor
 app.listen(port, () => {
-    console.log(`Servidor corriendo en http://localhost:${port}`);
+    console.log(` Servidor corriendo en puerto ${port}`);
 });
