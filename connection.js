@@ -1,87 +1,58 @@
-const mongoose = require("mongoose");
-require('dotenv').config();
+const mongoose = require('mongoose');
 
-const mongoUrl = process.env.MONGO_URL;
-mongoose.connect(mongoUrl);
-
-mongoose.connection.on('connected', () => {
-  console.log('Conexión a MongoDB establecida');
-});
-
-mongoose.connection.on('error', (err) => {
-  console.error('Error de conexión a MongoDB:', err);
-});
-// Esquema para impactos (mediciones)
-const impactosSchema = new mongoose.Schema(
-    {
-        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' },
-        valor: Number,
-        fecha_de_impacto: Date
-    },
-    { versionKey: false }
-);
-
-// Esquema para dispositivos
-const dispositivosSchema = new mongoose.Schema(
-    {
-        gps: {
-            latitud: Number,
-            longitud: Number
-        },
-        fecha_de_actualizacion: Date,
-        hora_de_actualizacion: String,
-        estatus: { type: String, default: 'activo' }
-    },
-    { versionKey: false }
-);
-
-// Esquema para rutas
-const rutasSchema = new mongoose.Schema(
-    {
-        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' },
-        nombre_ruta: String,
-        ubicacion_de_inicio: {
-            latitud: Number,
-            longitud: Number
-        },
-        ubicacion_de_final: {
-            latitud: Number,
-            longitud: Number
-        },
-        fecha_de_inicio: Date,
-        fecha_de_final: Date
-    },
-    { versionKey: false }
-);
-
-// Esquema para usuarios
-const usuariosSchema = new mongoose.Schema(
-    {
-        nombre: String,
-        apellido: String,
-        correo: { type: String, unique: true },
-        contrasenia: String,
-        tipo: { type: String, enum: ['administrador', 'usuario'], default: 'usuario' },
-        fecha_registro: { type: Date, default: Date.now },
-        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' }
-    },
-    { versionKey: false }
-);
-
-// Esquema para botones de pánico
-const botonPanicoSchema = new mongoose.Schema(
-    {
-        id_usuario: { type: mongoose.Schema.Types.ObjectId, ref: 'usuarios' },
-        id_dispositivo: { type: mongoose.Schema.Types.ObjectId, ref: 'dispositivos' },
-        estatus: { type: String, enum: ['activo', 'inactivo', 'emergencia'], default: 'activo' }
-    },
-    { versionKey: false }
-);
-
-module.exports = {
-    impactos: mongoose.model("impactos", impactosSchema),
-    dispositivos: mongoose.model("dispositivos", dispositivosSchema),
-    rutas: mongoose.model("rutas", rutasSchema),
-    usuarios: mongoose.model("usuarios", usuariosSchema),
-    botonesPanico: mongoose.model("botones_panico", botonPanicoSchema)
+// Conexión a MongoDB Atlas
+const connectDB = async () => {
+    try {
+        const MONGODB_URI = 'mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/DHT11?retryWrites=true&w=majority&appName=Cluster0';
+        
+        const conn = await mongoose.connect(MONGODB_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
+        console.log(`MongoDB Connected: ${conn.connection.host}`);
+        console.log(`Database: ${conn.connection.name}`);
+    } catch (error) {
+        console.error('Error connecting to MongoDB:', error);
+        process.exit(1);
+    }
 };
+
+// Esquema y Modelo de SensorData
+const sensorDataSchema = new mongoose.Schema({
+    temperature: {
+        type: Number,
+        required: true,
+        min: -50,
+        max: 100
+    },
+    humidity: {
+        type: Number,
+        required: true,
+        min: 0,
+        max: 100
+    },
+    deviceId: {
+        type: String,
+        required: true,
+        default: 'ESP32_DHT11'
+    },
+    location: {
+        type: String,
+        default: 'Unknown'
+    },
+    timestamp: {
+        type: Date,
+        default: Date.now
+    }
+}, {
+    timestamps: true,
+    collection: 'data' // Nombre específico de la colección
+});
+
+// Índices para mejor performance
+sensorDataSchema.index({ timestamp: -1 });
+sensorDataSchema.index({ deviceId: 1, timestamp: -1 });
+
+const SensorData = mongoose.model('SensorData', sensorDataSchema);
+
+module.exports = { connectDB, SensorData };
