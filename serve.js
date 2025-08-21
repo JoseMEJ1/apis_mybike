@@ -10,7 +10,7 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Conexión a MongoDB Atlas - CONEXIÓN MEJORADA
+// Conexión a MongoDB Atlas
 const dbURI = "mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/DHT11?retryWrites=true&w=majority&appName=Cluster0";
 
 // Configuración mejorada de Mongoose
@@ -21,24 +21,35 @@ const connectDB = async () => {
         const conn = await mongoose.connect(dbURI, {
             useNewUrlParser: true,
             useUnifiedTopology: true,
-            serverSelectionTimeoutMS: 5000, // Timeout de 5 segundos
-            socketTimeoutMS: 45000, // Timeout de socket de 45 segundos
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
         });
         
         console.log(' Conectado a MongoDB Atlas');
-        console.log(`Base de datos: ${conn.connection.name}`);
-        console.log(`Colección: ${conn.connection.collections.length} colecciones`);
+        console.log(` Base de datos: ${conn.connection.name}`);
+        
+        // Verificar si la colección existe, si no, crearla
+        const collections = await conn.connection.db.listCollections().toArray();
+        const collectionExists = collections.some(col => col.name === 'data');
+        
+        if (!collectionExists) {
+            console.log(' Creando colección "data"...');
+            await conn.connection.db.createCollection('data');
+            console.log(' Colección "data" creada');
+        } else {
+            console.log(' Colección "data" ya existe');
+        }
         
     } catch (error) {
-        console.log(' Error de conexión a MongoDB:', error.message);
-        process.exit(1); // Salir si no puede conectar
+        console.log('❌ Error de conexión a MongoDB:', error.message);
+        process.exit(1);
     }
 };
 
 // Conectar a la base de datos
 connectDB();
 
-// Esquema de datos del sensor
+// Esquema de datos del sensor - CORREGIDO
 const sensorSchema = new mongoose.Schema({
     temperatura: {
         type: Number,
@@ -60,10 +71,9 @@ const sensorSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
-}, {
-    collection: 'data'
 });
 
+// Modelo - SIN ESPECIFICAR COLECCIÓN (usará el plural del nombre)
 const SensorData = mongoose.model('SensorData', sensorSchema);
 
 // Middleware para verificar conexión a BD
@@ -199,24 +209,37 @@ app.delete('/api/sensor-data/:id', checkDBConnection, async (req, res) => {
     }
 });
 
-// Ruta de verificación de estado
-app.get('/api/health', (req, res) => {
-    const dbStatus = mongoose.connection.readyState;
-    const statusMessages = [
-        'desconectado',
-        'conectado',
-        'conectando',
-        'desconectando'
-    ];
-    
-    res.json({
-        success: dbStatus === 1,
-        message: `Estado de MongoDB: ${statusMessages[dbStatus]}`,
-        database: {
-            status: statusMessages[dbStatus],
-            readyState: dbStatus
-        }
-    });
+// Ruta de verificación de estado MEJORADA
+app.get('/api/health', async (req, res) => {
+    try {
+        const dbStatus = mongoose.connection.readyState;
+        const statusMessages = [
+            'desconectado',
+            'conectado',
+            'conectando',
+            'desconectando'
+        ];
+        
+        // Intentar una operación simple para verificar que funciona
+        const count = await SensorData.countDocuments().maxTimeMS(5000);
+        
+        res.json({
+            success: true,
+            message: ` MongoDB conectado y funcionando`,
+            database: {
+                status: statusMessages[dbStatus],
+                readyState: dbStatus,
+                documentos: count,
+                coleccion: 'sensordatas' // Mongoose usa el plural
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: ' Error en la base de datos',
+            error: error.message
+        });
+    }
 });
 
 // Ruta de información
@@ -229,7 +252,8 @@ app.get('/', (req, res) => {
             'PUT': '/api/sensor-data/:id',
             'DELETE': '/api/sensor-data/:id',
             'HEALTH': '/api/health'
-        }
+        },
+        coleccion: 'sensordatas (plural automático de mongoose)'
     });
 });
 
@@ -245,5 +269,5 @@ app.use('*', (req, res) => {
 // Iniciar servidor
 app.listen(port, () => {
     console.log(` Servidor corriendo en puerto ${port}`);
-    console.log(` Health check disponible en: http://localhost:${port}/api/health`);
+    console.log(` Health check: http://localhost:${port}/api/health`);
 });
