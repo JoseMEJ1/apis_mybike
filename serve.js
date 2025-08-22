@@ -1,212 +1,259 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 
+// Configuración de la aplicación
 const app = express();
-const port = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
-// Middlewares - IMPORTANTE: El orden sí importa
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.use(bodyParser.json());
+// Middleware
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Manejar preflight requests
-app.options('*', cors());
+// Conexión a MongoDB
+const MONGODB_URI = 'mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/DHT11?retryWrites=true&w=majority&appName=Cluster0';
 
-// Conexión a MongoDB Atlas
-const dbURI = "mongodb+srv://admin:123@cluster0.7wbet4i.mongodb.net/DHT11?retryWrites=true&w=majority&appName=Cluster0";
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('✅ Conectado a MongoDB'))
+  .catch((error) => console.error('❌ Error conectando a MongoDB:', error));
 
-mongoose.connect(dbURI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log('Conectado a MongoDB Atlas'))
-.catch(err => console.log('Error de conexión:', err));
-
-// Esquema y Modelo
-const sensorSchema = new mongoose.Schema({
-    temperatura: Number,
-    humedad: Number,
-    deviceId: String,
-    timestamp: {
-        type: Date,
-        default: Date.now
-    }
+// Esquema y modelo de SensorData
+const sensorDataSchema = new mongoose.Schema({
+  temperatura: {
+    type: Number,
+    required: true,
+    min: -50,
+    max: 100
+  },
+  humedad: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100
+  },
+  fecha: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: true
 });
 
-const SensorData = mongoose.model('SensorData', sensorSchema);
+const SensorData = mongoose.model('SensorData', sensorDataSchema);
 
-// 1. POST - Crear registro
-app.post('/api/sensor-data', async (req, res) => {
-    try {
-        const { temperatura, humedad, deviceId } = req.body;
-        
-        const newData = new SensorData({
-            temperatura,
-            humedad,
-            deviceId: deviceId || 'ESP32_DHT11'
-        });
+// Endpoints
 
-        const savedData = await newData.save();
-        
-        res.json({
-            success: true,
-            message: 'Registro creado',
-            data: savedData
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al crear registro'
-        });
-    }
-});
-
-// 2. GET - Obtener todos los registros
-app.get('/api/sensor-data', async (req, res) => {
-    try {
-        const data = await SensorData.find().sort({ timestamp: -1 });
-        res.json({
-            success: true,
-            data: data,
-            total: data.length
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al obtener registros'
-        });
-    }
-});
-
-// 3. GET - Obtener registro por ID
-app.get('/api/sensor-data/:id', async (req, res) => {
-    try {
-        const data = await SensorData.findById(req.params.id);
-        
-        if (!data) {
-            return res.status(404).json({
-                success: false,
-                message: 'Registro no encontrado'
-            });
-        }
-
-        res.json({
-            success: true,
-            data: data
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al obtener registro'
-        });
-    }
-});
-
-// 4. PUT - Actualizar registro (CORREGIDO)
-app.put('/api/sensor-data/:id', async (req, res) => {
-    try {
-        const { temperatura, humedad } = req.body;
-        
-        const updateData = {};
-        if (temperatura !== undefined) updateData.temperatura = temperatura;
-        if (humedad !== undefined) updateData.humedad = humedad;
-
-        const updatedData = await SensorData.findByIdAndUpdate(
-            req.params.id,
-            updateData,
-            { new: true, runValidators: true }
-        );
-
-        if (!updatedData) {
-            return res.status(404).json({
-                success: false,
-                message: 'Registro no encontrado'
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Registro actualizado',
-            data: updatedData
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al actualizar registro: ' + error.message
-        });
-    }
-});
-
-// 5. DELETE - Eliminar registro (CORREGIDO)
-app.delete('/api/sensor-data/:id', async (req, res) => {
-    try {
-        const deletedData = await SensorData.findByIdAndDelete(req.params.id);
-        
-        if (!deletedData) {
-            return res.status(404).json({
-                success: false,
-                message: 'Registro no encontrado'
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Registro eliminado',
-            data: deletedData
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al eliminar registro: ' + error.message
-        });
-    }
-});
-
-// Health check
-app.get('/api/health', (req, res) => {
+// GET - Obtener todos los datos del sensor
+app.get('/api/sensordata', async (req, res) => {
+  try {
+    const data = await SensorData.find().sort({ fecha: -1 });
     res.json({
-        success: true,
-        message: 'API funcionando correctamente',
-        timestamp: new Date().toISOString()
+      success: true,
+      count: data.length,
+      data: data
     });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener los datos',
+      error: error.message
+    });
+  }
 });
 
-// Ruta de prueba para verificar métodos
-app.get('/api/test-methods', (req, res) => {
+// GET - Obtener un dato específico por ID
+app.get('/api/sensordata/:id', async (req, res) => {
+  try {
+    const data = await SensorData.findById(req.params.id);
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dato no encontrado'
+      });
+    }
     res.json({
-        success: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE'],
-        message: 'Todos los métodos están habilitados'
+      success: true,
+      data: data
     });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener el dato',
+      error: error.message
+    });
+  }
+});
+
+// POST - Crear nuevo dato del sensor
+app.post('/api/sensordata', async (req, res) => {
+  try {
+    const { temperatura, humedad } = req.body;
+
+    // Validaciones
+    if (temperatura === undefined || humedad === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Temperatura y humedad son requeridas'
+      });
+    }
+
+    if (temperatura < -50 || temperatura > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Temperatura debe estar entre -50 y 100'
+      });
+    }
+
+    if (humedad < 0 || humedad > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Humedad debe estar entre 0 y 100'
+      });
+    }
+
+    const newData = new SensorData({
+      temperatura,
+      humedad
+    });
+
+    const savedData = await newData.save();
+    
+    res.status(201).json({
+      success: true,
+      message: 'Dato creado exitosamente',
+      data: savedData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al crear el dato',
+      error: error.message
+    });
+  }
+});
+
+// PUT - Actualizar dato existente
+app.put('/api/sensordata/:id', async (req, res) => {
+  try {
+    const { temperatura, humedad } = req.body;
+
+    // Validaciones
+    if (temperatura && (temperatura < -50 || temperatura > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Temperatura debe estar entre -50 y 100'
+      });
+    }
+
+    if (humedad && (humedad < 0 || humedad > 100)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Humedad debe estar entre 0 y 100'
+      });
+    }
+
+    const updatedData = await SensorData.findByIdAndUpdate(
+      req.params.id,
+      { temperatura, humedad },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dato no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Dato actualizado exitosamente',
+      data: updatedData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar el dato',
+      error: error.message
+    });
+  }
+});
+
+// DELETE - Eliminar dato
+app.delete('/api/sensordata/:id', async (req, res) => {
+  try {
+    const deletedData = await SensorData.findByIdAndDelete(req.params.id);
+    
+    if (!deletedData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Dato no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Dato eliminado exitosamente',
+      data: deletedData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar el dato',
+      error: error.message
+    });
+  }
+});
+
+// DELETE - Eliminar todos los datos
+app.delete('/api/sensordata', async (req, res) => {
+  try {
+    const result = await SensorData.deleteMany({});
+    
+    res.json({
+      success: true,
+      message: `Se eliminaron ${result.deletedCount} datos exitosamente`
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar los datos',
+      error: error.message
+    });
+  }
+});
+
+// Ruta de prueba
+app.get('/', (req, res) => {
+  res.json({
+    message: 'API del Sensor DHT11 funcionando',
+    endpoints: {
+      'GET /api/sensordata': 'Obtener todos los datos',
+      'GET /api/sensordata/:id': 'Obtener un dato por ID',
+      'POST /api/sensordata': 'Crear nuevo dato',
+      'PUT /api/sensordata/:id': 'Actualizar dato',
+      'DELETE /api/sensordata/:id': 'Eliminar dato específico',
+      'DELETE /api/sensordata': 'Eliminar todos los datos'
+    }
+  });
 });
 
 // Manejo de errores 404
 app.use('*', (req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Ruta no encontrada'
-    });
+  res.status(404).json({
+    success: false,
+    message: 'Endpoint no encontrado'
+  });
 });
 
-// Manejo de errores global
-app.use((err, req, res, next) => {
-    console.error('Error:', err);
-    res.status(500).json({
-        success: false,
-        message: 'Error interno del servidor'
-    });
-});
-
-app.listen(port, () => {
-    console.log(`🚀 Servidor corriendo en puerto ${port}`);
-    console.log(`📊 Health check: http://localhost:${port}/api/health`);
-    console.log(`🧪 Test methods: http://localhost:${port}/api/test-methods`);
+// Iniciar servidor
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+  console.log('📊 Endpoints disponibles:');
+  console.log('  GET    /api/sensordata');
+  console.log('  GET    /api/sensordata/:id');
+  console.log('  POST   /api/sensordata');
+  console.log('  PUT    /api/sensordata/:id');
+  console.log('  DELETE /api/sensordata/:id');
+  console.log('  DELETE /api/sensordata');
 });
